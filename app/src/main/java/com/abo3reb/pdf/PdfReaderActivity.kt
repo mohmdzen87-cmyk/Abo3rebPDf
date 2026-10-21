@@ -17,6 +17,12 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import android.speech.tts.TextToSpeech
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
+import java.util.Locale
+import java.util.concurrent.Executors
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -41,6 +47,9 @@ class PdfReaderActivity : AppCompatActivity() {
     private var lastTouchY = 0f
     private var currentPage = 0
     private var pageTurnInProgress = false
+    private var textToSpeech: TextToSpeech? = null
+    @Volatile private var speechReady = false
+    private val speechExecutor = Executors.newSingleThreadExecutor()
 
     private val preferences by lazy {
         getSharedPreferences(AppSettings.PREFS_NAME, MODE_PRIVATE)
@@ -62,6 +71,19 @@ class PdfReaderActivity : AppCompatActivity() {
         pageImage = findViewById(R.id.pdfPageImage)
         pageCounter = findViewById(R.id.tvPageCounter)
         statusText = findViewById(R.id.tvPdfStatus)
+
+        PDFBoxResourceLoader.init(applicationContext)
+        textToSpeech = TextToSpeech(this) { status ->
+            val engine = textToSpeech
+            if (status == TextToSpeech.SUCCESS && engine != null) {
+                val languageStatus = engine.setLanguage(Locale("ar"))
+                speechReady = languageStatus != TextToSpeech.LANG_MISSING_DATA &&
+                    languageStatus != TextToSpeech.LANG_NOT_SUPPORTED
+            }
+        }
+        findViewById<MaterialButton>(R.id.btnReadAloud).setOnClickListener {
+            toggleReadAloud()
+        }
 
         findViewById<MaterialButton>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnShare).setOnClickListener { sharePdf() }
@@ -170,13 +192,86 @@ class PdfReaderActivity : AppCompatActivity() {
             if (count <= 0) throw IllegalStateException("PDF contains no pages")
             currentPage = preferences.getInt(pagePreferenceKey, 0).coerceIn(0, count - 1)
             renderCurrentPage()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            ErrorLog.record(this, "فتح ملف PDF", error)
             showError()
+        }
+    }
+
+    private fun toggleReadAloud() {
+        val engine = textToSpeech
+        if (engine?.isSpeaking == true) {
+            engine.stop()
+            findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
+            return
+        }
+        if (!speechReady) {
+            Toast.makeText(this, R.string.speech_unavailable, Toast.LENGTH_LONG).show()
+            return
+        }
+        val button = findViewById<MaterialButton>(R.id.btnReadAloud)
+        button.isEnabled = false
+        Toast.makeText(this, R.string.speech_started, Toast.LENGTH_SHORT).show()
+        val pageNumber = currentPage + 1
+        val sourceUri = pdfUri
+        speechExecutor.execute {
+            try {
+                val text = contentResolver.openInputStream(sourceUri)?.use { input ->
+                    PDDocument.load(input).use { document ->
+                        val stripper = PDFTextStripper().apply {
+                            startPage = pageNumber
+                            endPage = pageNumber
+                        }
+                        stripper.getText(document).trim()
+                    }
+                }.orEmpty()
+                runOnUiThread {
+                    button.isEnabled = true
+                    if (text.isBlank()) {
+                        Toast.makeText(this, R.string.speech_no_text, Toast.LENGTH_LONG).show()
+                    } else if (textToSpeech != null && speechReady) {
+                        button.setText(R.string.stop_read_aloud)
+                        speakTextInChunks(text)
+                    }
+                }
+            } catch (error: Exception) {
+                ErrorLog.record(this, "استخراج نص القراءة الصوتية", error)
+                runOnUiThread {
+                    button.isEnabled = true
+                    Toast.makeText(this, R.string.speech_error, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun speakTextInChunks(text: String) {
+        val engine = textToSpeech ?: return
+        val maxLength = TextToSpeech.getMaxSpeechInputLength()
+        val chunks = mutableListOf<String>()
+        var remaining = text
+        while (remaining.length > maxLength) {
+            var splitAt = remaining.lastIndexOf(' ', maxLength)
+            if (splitAt < maxLength / 2) splitAt = maxLength
+            chunks.add(remaining.substring(0, splitAt).trim())
+            remaining = remaining.substring(splitAt).trim()
+        }
+        if (remaining.isNotBlank()) chunks.add(remaining)
+        chunks.forEachIndexed { index, chunk ->
+            engine.speak(
+                chunk,
+                if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                null,
+                "pdf-page-$currentPage-chunk-$index"
+            )
         }
     }
 
     private fun showRelativePage(offset: Int) {
         if (pageTurnInProgress) return
+        if (textToSpeech?.isSpeaking == true) {
+            textToSpeech?.stop()
+            findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
+        }
         val count = renderer?.pageCount ?: return
         val destination = currentPage + offset
         if (destination !in 0 until count) {
@@ -364,7 +459,8 @@ class PdfReaderActivity : AppCompatActivity() {
             findViewById<MaterialButton>(R.id.btnPrev).isEnabled = currentPage > 0
             findViewById<MaterialButton>(R.id.btnNext).isEnabled =
                 currentPage < pdfRenderer.pageCount - 1
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            ErrorLog.record(this, "رسم صفحة PDF", error)
             newBitmap?.takeIf { !it.isRecycled }?.recycle()
             showError()
         } finally {
@@ -428,7 +524,8 @@ class PdfReaderActivity : AppCompatActivity() {
         }
         try {
             startActivity(Intent.createChooser(shareIntent, getString(R.string.share_chooser)))
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            ErrorLog.record(this, "مشاركة ملف PDF", error)
             Toast.makeText(this, R.string.file_open_error, Toast.LENGTH_SHORT).show()
         }
     }
@@ -455,6 +552,10 @@ class PdfReaderActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         pageImage.animate().cancel()
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        speechExecutor.shutdownNow()
         pageImage.setImageDrawable(null)
         pageBitmap?.takeIf { !it.isRecycled }?.recycle()
         pageBitmap = null
