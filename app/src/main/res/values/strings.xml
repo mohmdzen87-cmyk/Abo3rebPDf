@@ -63,4 +63,16 @@
     <string name="page_number_hint">رقم الصفحة</string>
     <string name="go">انتقال</string>
     <string name="invalid_page_number">اكتب رقم صفحة صحيح ضمن نطاق الملف.</string>
+    <string name="error_log_button">سجل أخطاء التطبيق</string>
+    <string name="error_log_title">سجل الأخطاء</string>
+    <string name="error_log_description">الأخطاء المسجلة محلياً للمساعدة في تشخيص المشاكل. لا يتم إرسالها لأي جهة.</string>
+    <string name="error_log_empty">ما في أخطاء مسجلة حالياً.</string>
+    <string name="error_log_clear">مسح السجل</string>
+    <string name="error_log_cleared">تم مسح سجل الأخطاء.</string>
+    <string name="read_aloud">اقرأ الصفحة صوتياً</string>
+    <string name="stop_read_aloud">إيقاف القراءة الصوتية</string>
+    <string name="speech_no_text">ما لقيت نص قابل للقراءة في هذه الصفحة. إذا كانت صورة ممسوحة ضوئياً، تحتاج OCR.</string>
+    <string name="speech_unavailable">محرك الصوت أو اللغة العربية غير متوفر على هذا الجهاز.</string>
+    <string name="speech_error">تعذرت قراءة الصفحة صوتياً.</string>
+    <string name="speech_started">جارٍ تجهيز القراءة الصوتية للصفحة الحالية…</string>
 </resources>
