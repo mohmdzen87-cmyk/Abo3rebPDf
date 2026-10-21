@@ -2,12 +2,14 @@ package com.abo3reb.pdf
 
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.text.InputType
 import android.view.GestureDetector
+import android.view.ScaleGestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -31,6 +33,11 @@ class PdfReaderActivity : AppCompatActivity() {
     private lateinit var pageCounter: TextView
     private lateinit var statusText: TextView
     private lateinit var swipeDetector: GestureDetector
+    private lateinit var scaleDetector: ScaleGestureDetector
+    private val zoomMatrix = Matrix()
+    private var zoomFactor = 1f
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
     private var currentPage = 0
     private var pageTurnInProgress = false
 
@@ -85,11 +92,51 @@ class PdfReaderActivity : AppCompatActivity() {
             }
         })
 
+        pageImage.scaleType = ImageView.ScaleType.MATRIX
+        scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val next = (zoomFactor * detector.scaleFactor).coerceIn(1f, 5f)
+                val factor = next / zoomFactor
+                zoomFactor = next
+                zoomMatrix.postScale(factor, factor, detector.focusX, detector.focusY)
+                constrainZoomMatrix()
+                pageImage.imageMatrix = zoomMatrix
+                return true
+            }
+        })
+
         pageImage.setOnTouchListener { _, event ->
-            if (preferences.getBoolean(AppSettings.KEY_SWIPE_NAVIGATION, true)) {
-                swipeDetector.onTouchEvent(event)
-            } else {
-                false
+            scaleDetector.onTouchEvent(event)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastTouchX = event.x
+                    lastTouchY = event.y
+                    if (zoomFactor > 1f) true
+                    else {
+                        swipeDetector.onTouchEvent(event)
+                        true
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (zoomFactor > 1f && event.pointerCount == 1) {
+                        val dx = event.x - lastTouchX
+                        val dy = event.y - lastTouchY
+                        zoomMatrix.postTranslate(dx, dy)
+                        constrainZoomMatrix()
+                        pageImage.imageMatrix = zoomMatrix
+                        lastTouchX = event.x
+                        lastTouchY = event.y
+                        true
+                    } else {
+                        swipeDetector.onTouchEvent(event)
+                        true
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (zoomFactor <= 1f) swipeDetector.onTouchEvent(event)
+                    true
+                }
+                else -> true
             }
         }
 
@@ -303,6 +350,7 @@ class PdfReaderActivity : AppCompatActivity() {
             val previousBitmap = pageBitmap
             pageBitmap = newBitmap
             pageImage.setImageBitmap(newBitmap)
+            resetZoom()
             previousBitmap?.takeIf { it !== newBitmap && !it.isRecycled }?.recycle()
             newBitmap = null
 
@@ -321,6 +369,30 @@ class PdfReaderActivity : AppCompatActivity() {
         } finally {
             page?.close()
         }
+    }
+
+    private fun resetZoom() {
+        zoomFactor = 1f
+        zoomMatrix.reset()
+        pageImage.imageMatrix = zoomMatrix
+    }
+
+    private fun constrainZoomMatrix() {
+        val values = FloatArray(9)
+        zoomMatrix.getValues(values)
+        val scale = values[Matrix.MSCALE_X].coerceIn(1f, 5f)
+        values[Matrix.MSCALE_X] = scale
+        values[Matrix.MSCALE_Y] = scale
+        val drawable = pageImage.drawable ?: return
+        val viewWidth = pageImage.width.toFloat()
+        val viewHeight = pageImage.height.toFloat()
+        val contentWidth = drawable.intrinsicWidth * scale
+        val contentHeight = drawable.intrinsicHeight * scale
+        val minX = minOf(0f, viewWidth - contentWidth)
+        val minY = minOf(0f, viewHeight - contentHeight)
+        values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].coerceIn(minX, 0f)
+        values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].coerceIn(minY, 0f)
+        zoomMatrix.setValues(values)
     }
 
     private fun showError() {
