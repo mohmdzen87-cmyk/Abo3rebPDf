@@ -46,6 +46,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        findViewById<MaterialButton>(R.id.btnErrorLog).setOnClickListener {
+            startActivity(Intent(this, ErrorLogActivity::class.java))
+        }
 
         findViewById<MaterialButton>(R.id.btnContinue).setOnClickListener {
             recentUris().firstOrNull()?.let(::openPdf)
