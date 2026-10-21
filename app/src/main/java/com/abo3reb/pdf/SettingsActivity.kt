@@ -2,6 +2,8 @@ package com.abo3reb.pdf
 
 import android.os.Bundle
 import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -25,6 +27,18 @@ class SettingsActivity : AppCompatActivity() {
         window.statusBarColor = getColor(R.color.navy)
         window.navigationBarColor = getColor(R.color.background)
         setContentView(R.layout.activity_settings)
+
+        val root = findViewById<android.widget.ScrollView>(android.R.id.content).getChildAt(0) as LinearLayout
+        val cloudSpeechButton = MaterialButton(this).apply {
+            text = getString(R.string.cloud_tts_setup)
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (12 * resources.displayMetrics.density).toInt() }
+        }
+        root.addView(cloudSpeechButton, root.childCount - 1)
+        cloudSpeechButton.setOnClickListener { showCloudSpeechDialog() }
 
         animationButton = findViewById(R.id.btnAnimationValue)
         themeButton = findViewById(R.id.btnThemeValue)
@@ -54,6 +68,45 @@ class SettingsActivity : AppCompatActivity() {
             resetSettings()
         }
         refreshLabels()
+    }
+
+    private fun showCloudSpeechDialog() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.cloud_tts_url_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
+            setText(preferences.getString(AppSettings.KEY_CLOUD_TTS_URL, "").orEmpty())
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.cloud_tts_url_title)
+            .setMessage(R.string.cloud_tts_url_help)
+            .setView(input)
+            .setNeutralButton(R.string.cloud_tts_voice_title) { _, _ -> showCloudVoiceDialog() }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.change) { _, _ ->
+                val url = input.text.toString().trim().trimEnd('/')
+                if (url.isNotEmpty() && !url.startsWith("https://", ignoreCase = true)) {
+                    Toast.makeText(this, R.string.cloud_tts_invalid_url, Toast.LENGTH_LONG).show()
+                } else {
+                    preferences.edit().putString(AppSettings.KEY_CLOUD_TTS_URL, url).apply()
+                    Toast.makeText(this, R.string.cloud_tts_saved, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
+    private fun showCloudVoiceDialog() {
+        val values = arrayOf("male", "female")
+        val labels = arrayOf(getString(R.string.cloud_tts_voice_male), getString(R.string.cloud_tts_voice_female))
+        val selected = if (preferences.getString(AppSettings.KEY_CLOUD_TTS_VOICE, "male") == "female") 1 else 0
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.cloud_tts_voice_title)
+            .setSingleChoiceItems(labels, selected) { dialog, which ->
+                preferences.edit().putString(AppSettings.KEY_CLOUD_TTS_VOICE, values[which]).apply()
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showAnimationDialog() {
