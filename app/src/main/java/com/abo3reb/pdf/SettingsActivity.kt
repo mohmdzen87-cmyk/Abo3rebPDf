@@ -62,17 +62,8 @@ class SettingsActivity : AppCompatActivity() {
             showThemeDialog()
         }
         themeButton.setOnClickListener { showThemeDialog() }
-        findViewById<MaterialButton>(R.id.btnChooseSpeechLanguage).setOnClickListener {
-            showSpeechLanguageDialog()
-        }
         speechLanguageButton.setOnClickListener { showSpeechLanguageDialog() }
-        findViewById<MaterialButton>(R.id.btnChooseSpeechRate).setOnClickListener {
-            showSpeechRateDialog()
-        }
         speechRateButton.setOnClickListener { showSpeechRateDialog() }
-        findViewById<MaterialButton>(R.id.btnChooseSpeechPitch).setOnClickListener {
-            showSpeechPitchDialog()
-        }
         speechPitchButton.setOnClickListener { showSpeechPitchDialog() }
 
         swipeSwitch.isChecked = preferences.getBoolean(AppSettings.KEY_SWIPE_NAVIGATION, true)
