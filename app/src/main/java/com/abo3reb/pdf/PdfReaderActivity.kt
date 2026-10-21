@@ -330,12 +330,22 @@ class PdfReaderActivity : AppCompatActivity() {
             return false
         }
 
-        // Prefer the best-quality installed voice matching the selected language.
+        // Prefer the best matching voice available on this device. Quality is the
+        // primary signal; when quality is equal, prefer a network voice because
+        // online voices are often more natural than compact offline voices.
         try {
-            engine.voices
-                ?.filter { it.locale.language.equals(languageCode, ignoreCase = true) }
-                ?.maxByOrNull { it.quality }
-                ?.let(engine::setVoice)
+            val matchingVoices = engine.voices
+                .orEmpty()
+                .filter { it.locale.language.equals(languageCode, ignoreCase = true) }
+
+            val preferredVoice = matchingVoices.maxWithOrNull(
+                compareBy<android.speech.tts.Voice> { it.quality }
+                    .thenBy { if (it.isNetworkConnectionRequired) 1 else 0 }
+                    .thenBy { -it.latency }
+            )
+            if (preferredVoice != null) {
+                engine.setVoice(preferredVoice)
+            }
         } catch (_: Exception) {
             // Some TTS engines do not expose voice metadata; setLanguage is the fallback.
         }
