@@ -18,11 +18,13 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -49,6 +51,11 @@ class PdfReaderActivity : AppCompatActivity() {
     private var pageTurnInProgress = false
     private var textToSpeech: TextToSpeech? = null
     @Volatile private var speechReady = false
+    @Volatile private var speechLoading = false
+    @Volatile private var speechActive = false
+    @Volatile private var speechRequestId = 0
+    @Volatile private var lastSpeechUtteranceId: String? = null
+    private var speechTask: Future<*>? = null
     private val speechExecutor = Executors.newSingleThreadExecutor()
 
     private val preferences by lazy {
@@ -75,12 +82,48 @@ class PdfReaderActivity : AppCompatActivity() {
         PDFBoxResourceLoader.init(applicationContext)
         textToSpeech = TextToSpeech(this) { status ->
             val engine = textToSpeech
-            if (status == TextToSpeech.SUCCESS && engine != null) {
-                val languageStatus = engine.setLanguage(Locale("ar"))
-                speechReady = languageStatus != TextToSpeech.LANG_MISSING_DATA &&
-                    languageStatus != TextToSpeech.LANG_NOT_SUPPORTED
+            speechReady = status == TextToSpeech.SUCCESS && engine != null
+            if (speechReady && engine != null) {
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+
+                    override fun onDone(utteranceId: String?) {
+                        val request = speechRequestId
+                        if (utteranceId == lastSpeechUtteranceId &&
+                            isCurrentSpeechUtterance(utteranceId, request)
+                        ) {
+                            runOnUiThread { finishReadAloud(request) }
+                        }
+                    }
+
+                    override fun onError(utteranceId: String?) {
+                        val request = speechRequestId
+                        if (!isCurrentSpeechUtterance(utteranceId, request)) return
+                        runOnUiThread {
+                            if (request != speechRequestId || isDestroyed) return@runOnUiThread
+                            ErrorLog.record(
+                                this@PdfReaderActivity,
+                                getString(R.string.error_stage_speech_playback),
+                                IllegalStateException("Text-to-speech engine could not play an utterance")
+                            )
+                            cancelReadAloud()
+                            Toast.makeText(
+                                this@PdfReaderActivity,
+                                R.string.speech_error,
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                        val request = speechRequestId
+                        if (!isCurrentSpeechUtterance(utteranceId, request)) return
+                        runOnUiThread { finishReadAloud(request) }
+                    }
+                })
             }
         }
+
         findViewById<MaterialButton>(R.id.btnReadAloud).setOnClickListener {
             toggleReadAloud()
         }
@@ -199,78 +242,188 @@ class PdfReaderActivity : AppCompatActivity() {
     }
 
     private fun toggleReadAloud() {
-        val engine = textToSpeech
-        if (engine?.isSpeaking == true) {
-            engine.stop()
-            findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
+        if (speechLoading || speechActive || textToSpeech?.isSpeaking == true) {
+            cancelReadAloud()
             return
         }
         if (!speechReady) {
             Toast.makeText(this, R.string.speech_unavailable, Toast.LENGTH_LONG).show()
             return
         }
+
         val button = findViewById<MaterialButton>(R.id.btnReadAloud)
-        button.isEnabled = false
-        Toast.makeText(this, R.string.speech_started, Toast.LENGTH_SHORT).show()
+        val request = ++speechRequestId
         val pageNumber = currentPage + 1
         val sourceUri = pdfUri
-        speechExecutor.execute {
+        speechLoading = true
+        speechActive = false
+        lastSpeechUtteranceId = null
+        button.isEnabled = true
+        button.setText(R.string.stop_read_aloud)
+        Toast.makeText(this, R.string.speech_started, Toast.LENGTH_SHORT).show()
+
+        speechTask = speechExecutor.submit {
             try {
-                val text = contentResolver.openInputStream(sourceUri)?.use { input ->
+                val extractedText = contentResolver.openInputStream(sourceUri)?.use { input ->
                     PDDocument.load(input).use { document ->
-                        val stripper = PDFTextStripper().apply {
-                            startPage = pageNumber
-                            endPage = document.numberOfPages
+                        if (pageNumber > document.numberOfPages) {
+                            ""
+                        } else {
+                            val stripper = PDFTextStripper().apply {
+                                startPage = pageNumber
+                                endPage = document.numberOfPages
+                            }
+                            stripper.getText(document)
                         }
-                        stripper.getText(document).trim()
                     }
                 }.orEmpty()
+                val text = SpeechTextProcessor.normalize(extractedText)
+
+                if (Thread.currentThread().isInterrupted || request != speechRequestId) return@submit
                 runOnUiThread {
-                    button.isEnabled = true
+                    if (request != speechRequestId || isFinishing || isDestroyed) return@runOnUiThread
+                    speechTask = null
                     if (text.isBlank()) {
+                        finishReadAloud(request)
                         Toast.makeText(this, R.string.speech_no_text, Toast.LENGTH_LONG).show()
-                    } else if (textToSpeech != null && speechReady) {
-                        button.setText(R.string.stop_read_aloud)
-                        speakTextInChunks(text)
+                    } else if (!configureSpeechForText(text)) {
+                        finishReadAloud(request)
+                        Toast.makeText(
+                            this,
+                            R.string.speech_language_unavailable,
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        speakTextInChunks(text, request)
                     }
                 }
             } catch (error: Exception) {
+                if (Thread.currentThread().isInterrupted || request != speechRequestId) return@submit
                 ErrorLog.record(this, getString(R.string.error_stage_speech_extract), error)
                 runOnUiThread {
-                    button.isEnabled = true
+                    if (request != speechRequestId || isFinishing || isDestroyed) return@runOnUiThread
+                    speechTask = null
+                    finishReadAloud(request)
                     Toast.makeText(this, R.string.speech_error, Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
-    private fun speakTextInChunks(text: String) {
-        val engine = textToSpeech ?: return
-        val maxLength = TextToSpeech.getMaxSpeechInputLength()
-        val chunks = mutableListOf<String>()
-        var remaining = text
-        while (remaining.length > maxLength) {
-            var splitAt = remaining.lastIndexOf(' ', maxLength)
-            if (splitAt < maxLength / 2) splitAt = maxLength
-            chunks.add(remaining.substring(0, splitAt).trim())
-            remaining = remaining.substring(splitAt).trim()
+    private fun configureSpeechForText(text: String): Boolean {
+        val engine = textToSpeech ?: return false
+        val preferredLanguage = preferences.getString(
+            AppSettings.KEY_SPEECH_LANGUAGE,
+            AppSettings.SPEECH_LANGUAGE_AUTO
+        ) ?: AppSettings.SPEECH_LANGUAGE_AUTO
+        val languageCode = when (preferredLanguage) {
+            AppSettings.SPEECH_LANGUAGE_ARABIC -> "ar"
+            AppSettings.SPEECH_LANGUAGE_ENGLISH -> "en"
+            AppSettings.SPEECH_LANGUAGE_FRENCH -> "fr"
+            else -> SpeechTextProcessor.detectLanguageCode(text)
         }
-        if (remaining.isNotBlank()) chunks.add(remaining)
+        val locale = Locale.forLanguageTag(languageCode)
+        val languageStatus = engine.setLanguage(locale)
+        if (languageStatus == TextToSpeech.LANG_MISSING_DATA ||
+            languageStatus == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
+            return false
+        }
+
+        // Prefer the best-quality installed voice matching the selected language.
+        try {
+            engine.voices
+                ?.filter { it.locale.language.equals(languageCode, ignoreCase = true) }
+                ?.maxByOrNull { it.quality }
+                ?.let(engine::setVoice)
+        } catch (_: Exception) {
+            // Some TTS engines do not expose voice metadata; setLanguage is the fallback.
+        }
+
+        val rate = preferences.getFloat(
+            AppSettings.KEY_SPEECH_RATE,
+            AppSettings.DEFAULT_SPEECH_RATE
+        ).coerceIn(0.70f, 1.20f)
+        val pitch = preferences.getFloat(
+            AppSettings.KEY_SPEECH_PITCH,
+            AppSettings.DEFAULT_SPEECH_PITCH
+        ).coerceIn(0.85f, 1.15f)
+        engine.setSpeechRate(rate)
+        engine.setPitch(pitch)
+        return true
+    }
+
+    private fun speakTextInChunks(text: String, request: Int) {
+        val engine = textToSpeech ?: run {
+            finishReadAloud(request)
+            return
+        }
+        val maxLength = (TextToSpeech.getMaxSpeechInputLength() - 16).coerceAtLeast(256)
+        val chunks = SpeechTextProcessor.splitIntoChunks(text, maxLength)
+        if (chunks.isEmpty()) {
+            finishReadAloud(request)
+            Toast.makeText(this, R.string.speech_no_text, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        speechLoading = false
+        speechActive = true
+        val button = findViewById<MaterialButton>(R.id.btnReadAloud)
+        button.isEnabled = true
+        button.setText(R.string.stop_read_aloud)
+
         chunks.forEachIndexed { index, chunk ->
-            engine.speak(
-                chunk,
-                if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
-                null,
-                "pdf-page-$currentPage-chunk-$index"
-            )
+            if (request != speechRequestId) return
+            val utteranceId = "abo3reb-speech-$request-$index"
+            lastSpeechUtteranceId = utteranceId
+            val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            val result = engine.speak(chunk, queueMode, null, utteranceId)
+            if (result == TextToSpeech.ERROR) {
+                ErrorLog.record(
+                    this,
+                    getString(R.string.error_stage_speech_playback),
+                    IllegalStateException("Text-to-speech engine rejected an utterance")
+                )
+                cancelReadAloud()
+                Toast.makeText(this, R.string.speech_error, Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+    }
+
+    private fun isCurrentSpeechUtterance(utteranceId: String?, request: Int): Boolean =
+        utteranceId?.startsWith("abo3reb-speech-$request-") == true
+
+    private fun finishReadAloud(request: Int) {
+        if (request != speechRequestId || isDestroyed) return
+        speechLoading = false
+        speechActive = false
+        speechTask = null
+        lastSpeechUtteranceId = null
+        findViewById<MaterialButton>(R.id.btnReadAloud).apply {
+            isEnabled = true
+            setText(R.string.read_aloud)
+        }
+    }
+
+    private fun cancelReadAloud() {
+        speechRequestId += 1
+        speechTask?.cancel(true)
+        speechTask = null
+        speechLoading = false
+        speechActive = false
+        lastSpeechUtteranceId = null
+        textToSpeech?.stop()
+        findViewById<MaterialButton>(R.id.btnReadAloud).apply {
+            isEnabled = true
+            setText(R.string.read_aloud)
         }
     }
 
     private fun showRelativePage(offset: Int) {
         if (pageTurnInProgress) return
-        if (textToSpeech?.isSpeaking == true) {
-            textToSpeech?.stop()
-            findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
+        if (speechLoading || speechActive || textToSpeech?.isSpeaking == true) {
+            cancelReadAloud()
         }
         val count = renderer?.pageCount ?: return
         val destination = currentPage + offset
@@ -348,6 +501,11 @@ class PdfReaderActivity : AppCompatActivity() {
     }
 
     private fun moveToPage(destination: Int) {
+        if (destination != currentPage &&
+            (speechLoading || speechActive || textToSpeech?.isSpeaking == true)
+        ) {
+            cancelReadAloud()
+        }
         val count = renderer?.pageCount ?: return
         if (destination !in 0 until count) return
         pageImage.animate().cancel()
@@ -552,6 +710,11 @@ class PdfReaderActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         pageImage.animate().cancel()
+        speechRequestId += 1
+        speechTask?.cancel(true)
+        speechTask = null
+        speechLoading = false
+        speechActive = false
         textToSpeech?.stop()
         textToSpeech?.shutdown()
         textToSpeech = null
