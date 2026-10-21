@@ -13,6 +13,8 @@ object AppSettings {
     const val KEY_PAGE_ANIMATION = "page_animation"
     const val KEY_SWIPE_NAVIGATION = "swipe_navigation"
     const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+    const val KEY_CLOUD_TTS_URL = "cloud_tts_url"
+    const val KEY_CLOUD_TTS_VOICE = "cloud_tts_voice"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
