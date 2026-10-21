@@ -193,7 +193,7 @@ class PdfReaderActivity : AppCompatActivity() {
             currentPage = preferences.getInt(pagePreferenceKey, 0).coerceIn(0, count - 1)
             renderCurrentPage()
         } catch (error: Exception) {
-            ErrorLog.record(this, "فتح ملف PDF", error)
+            ErrorLog.record(this, getString(R.string.error_stage_open_pdf), error)
             showError()
         }
     }
@@ -235,7 +235,7 @@ class PdfReaderActivity : AppCompatActivity() {
                     }
                 }
             } catch (error: Exception) {
-                ErrorLog.record(this, "استخراج نص القراءة الصوتية", error)
+                ErrorLog.record(this, getString(R.string.error_stage_speech_extract), error)
                 runOnUiThread {
                     button.isEnabled = true
                     Toast.makeText(this, R.string.speech_error, Toast.LENGTH_LONG).show()
@@ -460,7 +460,7 @@ class PdfReaderActivity : AppCompatActivity() {
             findViewById<MaterialButton>(R.id.btnNext).isEnabled =
                 currentPage < pdfRenderer.pageCount - 1
         } catch (error: Exception) {
-            ErrorLog.record(this, "رسم صفحة PDF", error)
+            ErrorLog.record(this, getString(R.string.error_stage_page_render), error)
             newBitmap?.takeIf { !it.isRecycled }?.recycle()
             showError()
         } finally {
@@ -525,7 +525,7 @@ class PdfReaderActivity : AppCompatActivity() {
         try {
             startActivity(Intent.createChooser(shareIntent, getString(R.string.share_chooser)))
         } catch (error: Exception) {
-            ErrorLog.record(this, "مشاركة ملف PDF", error)
+            ErrorLog.record(this, getString(R.string.error_stage_share_pdf), error)
             Toast.makeText(this, R.string.file_open_error, Toast.LENGTH_SHORT).show()
         }
     }
