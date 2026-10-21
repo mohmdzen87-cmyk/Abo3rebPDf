@@ -8,7 +8,7 @@ import java.util.Date
 import java.util.Locale
 
 object ErrorLog {
-    private const val PREFS = "abo3reb_pdf_settings"
+    private const val PREFS = AppSettings.PREFS_NAME
     private const val KEY = "error_log_entries"
     private const val MAX_ENTRIES = 100
 
