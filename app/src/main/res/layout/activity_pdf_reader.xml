@@ -112,6 +112,17 @@
         android:textColor="@color/text_secondary"
         android:textSize="13sp" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnReadAloud"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="18dp"
+        android:text="@string/read_aloud"
+        app:backgroundTint="@color/accent"
+        app:cornerRadius="14dp" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
