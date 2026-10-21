@@ -36,6 +36,7 @@ class PdfReaderActivity : AppCompatActivity() {
     private lateinit var scaleDetector: ScaleGestureDetector
     private val zoomMatrix = Matrix()
     private var zoomFactor = 1f
+    private var baseScale = 1f
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var currentPage = 0
@@ -374,24 +375,36 @@ class PdfReaderActivity : AppCompatActivity() {
     private fun resetZoom() {
         zoomFactor = 1f
         zoomMatrix.reset()
+        val drawable = pageImage.drawable ?: return
+        if (pageImage.width <= 0 || pageImage.height <= 0) return
+        baseScale = minOf(
+            pageImage.width.toFloat() / drawable.intrinsicWidth.coerceAtLeast(1),
+            pageImage.height.toFloat() / drawable.intrinsicHeight.coerceAtLeast(1)
+        )
+        val dx = (pageImage.width - drawable.intrinsicWidth * baseScale) / 2f
+        val dy = (pageImage.height - drawable.intrinsicHeight * baseScale) / 2f
+        zoomMatrix.setScale(baseScale, baseScale)
+        zoomMatrix.postTranslate(dx, dy)
         pageImage.imageMatrix = zoomMatrix
     }
 
     private fun constrainZoomMatrix() {
+        val drawable = pageImage.drawable ?: return
         val values = FloatArray(9)
         zoomMatrix.getValues(values)
-        val scale = values[Matrix.MSCALE_X].coerceIn(1f, 5f)
+        val scale = values[Matrix.MSCALE_X].coerceIn(baseScale, baseScale * 5f)
         values[Matrix.MSCALE_X] = scale
         values[Matrix.MSCALE_Y] = scale
-        val drawable = pageImage.drawable ?: return
         val viewWidth = pageImage.width.toFloat()
         val viewHeight = pageImage.height.toFloat()
         val contentWidth = drawable.intrinsicWidth * scale
         val contentHeight = drawable.intrinsicHeight * scale
         val minX = minOf(0f, viewWidth - contentWidth)
         val minY = minOf(0f, viewHeight - contentHeight)
-        values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].coerceIn(minX, 0f)
-        values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].coerceIn(minY, 0f)
+        val maxX = if (contentWidth <= viewWidth) (viewWidth - contentWidth) / 2f else 0f
+        val maxY = if (contentHeight <= viewHeight) (viewHeight - contentHeight) / 2f else 0f
+        values[Matrix.MTRANS_X] = values[Matrix.MTRANS_X].coerceIn(minX, maxX)
+        values[Matrix.MTRANS_Y] = values[Matrix.MTRANS_Y].coerceIn(minY, maxY)
         zoomMatrix.setValues(values)
     }
 
