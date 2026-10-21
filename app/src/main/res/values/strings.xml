@@ -74,4 +74,8 @@
     <string name="speech_unavailable">محرك تحويل النص إلى كلام أو دعم اللغة العربية غير متوفر على هذا الجهاز.</string>
     <string name="speech_error">تعذّرت قراءة النص صوتياً. حاول مرة أخرى.</string>
     <string name="speech_started">جارٍ إعداد القراءة الصوتية بدءاً من الصفحة الحالية…</string>
+    <string name="error_stage_open_pdf">فتح ملف PDF</string>
+    <string name="error_stage_speech_extract">استخراج نص القراءة الصوتية</string>
+    <string name="error_stage_page_render">عرض صفحة PDF</string>
+    <string name="error_stage_share_pdf">مشاركة ملف PDF</string>
 </resources>
