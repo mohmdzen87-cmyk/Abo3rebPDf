@@ -13,6 +13,16 @@ object AppSettings {
     const val KEY_PAGE_ANIMATION = "page_animation"
     const val KEY_SWIPE_NAVIGATION = "swipe_navigation"
     const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+    const val KEY_SPEECH_LANGUAGE = "speech_language"
+    const val KEY_SPEECH_RATE = "speech_rate"
+    const val KEY_SPEECH_PITCH = "speech_pitch"
+
+    const val SPEECH_LANGUAGE_AUTO = "auto"
+    const val SPEECH_LANGUAGE_ARABIC = "ar"
+    const val SPEECH_LANGUAGE_ENGLISH = "en"
+    const val SPEECH_LANGUAGE_FRENCH = "fr"
+    const val DEFAULT_SPEECH_RATE = 0.95f
+    const val DEFAULT_SPEECH_PITCH = 1.0f
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
