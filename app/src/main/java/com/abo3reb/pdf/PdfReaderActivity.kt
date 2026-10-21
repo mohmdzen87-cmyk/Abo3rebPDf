@@ -77,6 +77,24 @@ class PdfReaderActivity : AppCompatActivity() {
             val engine = textToSpeech
             if (status == TextToSpeech.SUCCESS && engine != null) {
                 val languageStatus = engine.setLanguage(Locale("ar"))
+                val arabicVoices = engine.voices
+                    ?.filter { it.locale.language == "ar" }
+                    ?.sortedWith(
+                        compareByDescending<android.speech.tts.Voice> { it.quality }
+                            .thenBy { it.latency }
+                    )
+                    .orEmpty()
+
+                // Prefer the highest-quality Arabic voice already installed in the
+                // user's TTS engine instead of relying on the engine's default voice.
+                val preferredVoice = arabicVoices.firstOrNull()
+                if (preferredVoice != null) {
+                    engine.voice = preferredVoice
+                }
+                // A slightly slower pace improves clarity for long-form Arabic reading.
+                engine.setSpeechRate(0.92f)
+                engine.setPitch(1.0f)
+
                 speechReady = languageStatus != TextToSpeech.LANG_MISSING_DATA &&
                     languageStatus != TextToSpeech.LANG_NOT_SUPPORTED
             }
