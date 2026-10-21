@@ -220,7 +220,7 @@ class PdfReaderActivity : AppCompatActivity() {
                     PDDocument.load(input).use { document ->
                         val stripper = PDFTextStripper().apply {
                             startPage = pageNumber
-                            endPage = pageNumber
+                            endPage = document.numberOfPages
                         }
                         stripper.getText(document).trim()
                     }
