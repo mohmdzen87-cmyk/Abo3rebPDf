@@ -2,6 +2,8 @@ package com.abo3reb.pdf
 
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ScrollView
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -28,7 +30,7 @@ class SettingsActivity : AppCompatActivity() {
         window.navigationBarColor = getColor(R.color.background)
         setContentView(R.layout.activity_settings)
 
-        val root = findViewById<android.widget.ScrollView>(android.R.id.content).getChildAt(0) as LinearLayout
+        val root = (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ScrollView).getChildAt(0) as LinearLayout
         val cloudSpeechButton = MaterialButton(this).apply {
             text = getString(R.string.cloud_tts_setup)
             isAllCaps = false
