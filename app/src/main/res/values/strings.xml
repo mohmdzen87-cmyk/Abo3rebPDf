@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Abo3reb PDF</string>
+    <string name="welcome_title">اقرأ ملفاتك براحة</string>
+    <string name="welcome_subtitle">كل ملفات PDF في مكان واحد، بتجربة قراءة هادئة وسهلة.</string>
+    <string name="get_started">ابدأ الآن</string>
+    <string name="app_tagline">قارئ PDF بسيط وعملي</string>
+    <string name="greeting">أهلاً بك</string>
+    <string name="home_subtitle">شو حابب تقرأ اليوم؟</string>
+    <string name="hero_title">مستنداتك، بطريقتك</string>
+    <string name="hero_description">افتح ملف PDF من جهازك وابدأ القراءة فوراً.</string>
+    <string name="open_pdf">اختيار ملف PDF</string>
+    <string name="recent_title">الملفات الأخيرة</string>
+    <string name="recent_empty">لسه ما فتحت أي ملف. اختَر ملف PDF حتى يظهر هون.</string>
+    <string name="recent_hint">اضغط على أي ملف للمتابعة</string>
+    <string name="privacy_title">خصوصيتك أولاً</string>
+    <string name="privacy_description">ملفاتك تُفتح من جهازك مباشرة، ولا يرفع التطبيق مستنداتك إلى خادم.</string>
+    <string name="pdf_file">ملف PDF</string>
+    <string name="reader_title">قارئ PDF</string>
+    <string name="page_loading">جارٍ تجهيز الصفحة…</string>
+    <string name="page_label">صفحة %1$d من %2$d</string>
+    <string name="previous_page">السابق</string>
+    <string name="next_page">التالي</string>
+    <string name="share">مشاركة</string>
+    <string name="back">رجوع</string>
+    <string name="file_open_error">ما قدرنا نفتح الملف. تأكد أنه ملف PDF صالح وحاول مرة ثانية.</string>
+    <string name="share_chooser">مشاركة ملف PDF</string>
+    <string name="continue_reading">متابعة آخر ملف</string>
+    <string name="page_limit_first">أنت في أول صفحة</string>
+    <string name="page_limit_last">وصلت إلى آخر صفحة</string>
+</resources>
