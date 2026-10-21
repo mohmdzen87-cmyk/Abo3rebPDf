@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#101722</color>
+    <color name="surface">#192334</color>
+    <color name="navy">#0B1220</color>
+    <color name="primary">#86A3FF</color>
+    <color name="accent">#638AFF</color>
+    <color name="text_primary">#EEF3FF</color>
+    <color name="text_secondary">#A5B1C7</color>
+    <color name="border">#2E3B52</color>
+    <color name="pdf_badge">#202D45</color>
+    <color name="error">#FFB4AB</color>
+    <color name="white">#FFFFFF</color>
+</resources>

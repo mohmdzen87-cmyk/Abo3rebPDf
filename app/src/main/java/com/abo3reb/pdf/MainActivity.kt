@@ -15,7 +15,9 @@ import com.google.android.material.card.MaterialCardView
 import org.json.JSONArray
 
 class MainActivity : AppCompatActivity() {
-    private val preferences by lazy { getSharedPreferences(PREFS_NAME, MODE_PRIVATE) }
+    private val preferences by lazy {
+        getSharedPreferences(AppSettings.PREFS_NAME, MODE_PRIVATE)
+    }
 
     private val pickPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -32,6 +34,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppSettings.applyTheme(this)
         super.onCreate(savedInstanceState)
         window.statusBarColor = getColor(R.color.navy)
         window.navigationBarColor = getColor(R.color.background)
@@ -39,6 +42,9 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.btnOpenPdf).setOnClickListener {
             pickPdf.launch(arrayOf("application/pdf"))
+        }
+        findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
 
         findViewById<MaterialButton>(R.id.btnContinue).setOnClickListener {
@@ -182,7 +188,6 @@ class MainActivity : AppCompatActivity() {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val PREFS_NAME = "abo3reb_pdf_preferences"
         private const val KEY_RECENT_URIS = "recent_uris"
         private const val MAX_RECENT_FILES = 8
     }

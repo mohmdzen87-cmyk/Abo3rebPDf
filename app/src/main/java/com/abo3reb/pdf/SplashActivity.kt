@@ -7,7 +7,10 @@ import com.google.android.material.button.MaterialButton
 
 class SplashActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppSettings.applyTheme(this)
         super.onCreate(savedInstanceState)
+        window.statusBarColor = getColor(R.color.navy)
+        window.navigationBarColor = getColor(R.color.background)
         setContentView(R.layout.activity_splash)
 
         findViewById<MaterialButton>(R.id.btnGetStarted).setOnClickListener {

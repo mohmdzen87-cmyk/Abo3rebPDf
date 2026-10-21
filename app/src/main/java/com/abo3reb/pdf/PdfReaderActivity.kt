@@ -6,12 +6,20 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.text.InputType
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 class PdfReaderActivity : AppCompatActivity() {
@@ -22,16 +30,22 @@ class PdfReaderActivity : AppCompatActivity() {
     private lateinit var pageImage: ImageView
     private lateinit var pageCounter: TextView
     private lateinit var statusText: TextView
+    private lateinit var swipeDetector: GestureDetector
     private var currentPage = 0
+    private var pageTurnInProgress = false
 
     private val preferences by lazy {
-        getSharedPreferences("abo3reb_pdf_preferences", MODE_PRIVATE)
+        getSharedPreferences(AppSettings.PREFS_NAME, MODE_PRIVATE)
     }
 
     private val pagePreferenceKey: String
         get() = "page_" + pdfUri.toString()
 
+    private val bookmarkPreferenceKey: String
+        get() = "bookmark_" + pdfUri.toString()
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppSettings.applyTheme(this)
         super.onCreate(savedInstanceState)
         window.statusBarColor = getColor(R.color.navy)
         window.navigationBarColor = getColor(R.color.background)
@@ -45,6 +59,38 @@ class PdfReaderActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btnShare).setOnClickListener { sharePdf() }
         findViewById<MaterialButton>(R.id.btnPrev).setOnClickListener { showRelativePage(-1) }
         findViewById<MaterialButton>(R.id.btnNext).setOnClickListener { showRelativePage(1) }
+        findViewById<MaterialButton>(R.id.btnBookmark).setOnClickListener {
+            showBookmarkOptions()
+        }
+        pageCounter.setOnClickListener { showGoToPageDialog() }
+
+        swipeDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent): Boolean = true
+
+            override fun onFling(
+                first: MotionEvent,
+                second: MotionEvent,
+                velocityX: Float,
+                velocityY: Float
+            ): Boolean {
+                if (!preferences.getBoolean(AppSettings.KEY_SWIPE_NAVIGATION, true)) return false
+                val deltaX = second.x - first.x
+                val deltaY = second.y - first.y
+                val threshold = dp(48).toFloat()
+                if (abs(deltaX) < threshold || abs(deltaX) < abs(deltaY)) return false
+                if (abs(velocityX) < dp(100)) return false
+                showRelativePage(if (deltaX < 0) 1 else -1)
+                return true
+            }
+        })
+
+        pageImage.setOnTouchListener { _, event ->
+            if (preferences.getBoolean(AppSettings.KEY_SWIPE_NAVIGATION, true)) {
+                swipeDetector.onTouchEvent(event)
+            } else {
+                false
+            }
+        }
 
         val uriString = intent.getStringExtra(EXTRA_URI)
         if (uriString.isNullOrBlank()) {
@@ -55,6 +101,15 @@ class PdfReaderActivity : AppCompatActivity() {
         pdfUri = Uri.parse(uriString)
         findViewById<TextView>(R.id.tvFileName).text = resolveDisplayName(pdfUri)
         openDocument()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (preferences.getBoolean(AppSettings.KEY_KEEP_SCREEN_ON, false)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun openDocument() {
@@ -72,6 +127,7 @@ class PdfReaderActivity : AppCompatActivity() {
     }
 
     private fun showRelativePage(offset: Int) {
+        if (pageTurnInProgress) return
         val count = renderer?.pageCount ?: return
         val destination = currentPage + offset
         if (destination !in 0 until count) {
@@ -83,8 +139,140 @@ class PdfReaderActivity : AppCompatActivity() {
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             return
         }
+
+        when (preferences.getString(
+            AppSettings.KEY_PAGE_ANIMATION,
+            AppSettings.ANIMATION_FLIP
+        )) {
+            AppSettings.ANIMATION_NONE -> moveToPage(destination)
+            AppSettings.ANIMATION_SLIDE -> animateSlide(destination, offset)
+            else -> animateBookFlip(destination, offset)
+        }
+    }
+
+    /**
+     * A lightweight 3D page-turn effect: rotate the current page away, swap
+     * the rendered PDF bitmap mid-turn, then rotate the new page into view.
+     */
+    private fun animateBookFlip(destination: Int, offset: Int) {
+        pageTurnInProgress = true
+        pageImage.cameraDistance = 12000f * resources.displayMetrics.density
+        val angle = if (offset > 0) -76f else 76f
+
+        pageImage.animate()
+            .rotationY(angle)
+            .scaleX(0.96f)
+            .alpha(0.68f)
+            .setDuration(145)
+            .withEndAction {
+                currentPage = destination
+                renderCurrentPage()
+                pageImage.rotationY = -angle
+                pageImage.scaleX = 0.96f
+                pageImage.alpha = 0.68f
+                pageImage.animate()
+                    .rotationY(0f)
+                    .scaleX(1f)
+                    .alpha(1f)
+                    .setDuration(165)
+                    .withEndAction { pageTurnInProgress = false }
+                    .start()
+            }
+            .start()
+    }
+
+    private fun animateSlide(destination: Int, offset: Int) {
+        pageTurnInProgress = true
+        val distance = max(pageImage.width * 0.18f, dp(48).toFloat())
+        pageImage.animate()
+            .translationX(-offset * distance)
+            .alpha(0.5f)
+            .setDuration(110)
+            .withEndAction {
+                currentPage = destination
+                renderCurrentPage()
+                pageImage.translationX = offset * distance
+                pageImage.alpha = 0.5f
+                pageImage.animate()
+                    .translationX(0f)
+                    .alpha(1f)
+                    .setDuration(145)
+                    .withEndAction { pageTurnInProgress = false }
+                    .start()
+            }
+            .start()
+    }
+
+    private fun moveToPage(destination: Int) {
+        val count = renderer?.pageCount ?: return
+        if (destination !in 0 until count) return
+        pageImage.animate().cancel()
+        pageTurnInProgress = false
+        pageImage.rotationY = 0f
+        pageImage.translationX = 0f
+        pageImage.scaleX = 1f
+        pageImage.alpha = 1f
         currentPage = destination
         renderCurrentPage()
+    }
+
+    private fun showGoToPageDialog() {
+        val count = renderer?.pageCount ?: return
+        val pageInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = getString(R.string.page_number_hint)
+            setText((currentPage + 1).toString())
+            selectAll()
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.go_to_page)
+            .setMessage(getString(R.string.enter_page_number, count))
+            .setView(pageInput)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.go) { _, _ ->
+                val requested = pageInput.text.toString().toIntOrNull()
+                if (requested == null || requested !in 1..count) {
+                    Toast.makeText(this, R.string.invalid_page_number, Toast.LENGTH_SHORT).show()
+                } else {
+                    moveToPage(requested - 1)
+                }
+            }
+            .show()
+    }
+
+    private fun showBookmarkOptions() {
+        val count = renderer?.pageCount ?: return
+        val bookmarkPage = preferences.getInt(bookmarkPreferenceKey, -1)
+            .takeIf { it in 0 until count }
+        val options = if (bookmarkPage == null) {
+            arrayOf(getString(R.string.bookmark_save_current))
+        } else {
+            arrayOf(
+                getString(R.string.bookmark_save_current),
+                getString(R.string.bookmark_go_to, bookmarkPage + 1)
+            )
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.bookmark_title)
+            .setItems(options) { _, selected ->
+                when (selected) {
+                    0 -> saveBookmark()
+                    1 -> bookmarkPage?.let(::moveToPage)
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun saveBookmark() {
+        preferences.edit().putInt(bookmarkPreferenceKey, currentPage).apply()
+        Toast.makeText(
+            this,
+            getString(R.string.bookmark_saved, currentPage + 1),
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun renderCurrentPage() {
@@ -176,7 +364,11 @@ class PdfReaderActivity : AppCompatActivity() {
         }
     }
 
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
     override fun onDestroy() {
+        pageImage.animate().cancel()
         pageImage.setImageDrawable(null)
         pageBitmap?.takeIf { !it.isRecycled }?.recycle()
         pageBitmap = null
