@@ -291,14 +291,14 @@ class PdfReaderActivity : AppCompatActivity() {
         val engine = textToSpeech ?: return
         val maxLength = TextToSpeech.getMaxSpeechInputLength()
         val normalizedText = text
-            .replace("\\r\\n", "\\n")
-            .replace('\\r', '\\n')
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
             // PDF extraction often inserts a newline at every visual line.
             // Keep blank lines as paragraph boundaries but join wrapped lines.
-            .replace(Regex("(?<!\\n)\\n(?!\\n)"), " ")
-            .replace(Regex("[ \\t]+"), " ")
-            .replace(Regex(" *\\n *"), "\\n")
-            .replace(Regex("\\n{3,}"), "\\n\\n")
+            .replace(Regex("(?<!\n)\n(?!\n)"), " ")
+            .replace(Regex("[ \t]+"), " ")
+            .replace(Regex(" *\n *"), "\n")
+            .replace(Regex("\n{3,}"), "\n\n")
             .trim()
         val chunks = mutableListOf<String>()
         var remaining = normalizedText
@@ -306,16 +306,12 @@ class PdfReaderActivity : AppCompatActivity() {
             val limit = maxLength.coerceAtMost(remaining.length - 1)
             val lowerBound = limit / 2
             val breakAt = sequenceOf(
-                remaining.lastIndexOf("\\n\\n", limit),
-                remaining.lastIndexOf('\\n', limit),
+                remaining.lastIndexOf("\n\n", limit),
+                remaining.lastIndexOf('\n', limit),
                 remaining.lastIndexOfAny(charArrayOf('؟', '!', '.', '؛', ':', '。'), limit),
                 remaining.lastIndexOf(' ', limit)
             ).firstOrNull { it >= lowerBound } ?: limit
-            val splitAt = if (breakAt < limit && remaining[breakAt].isWhitespace()) {
-                breakAt + 1
-            } else {
-                breakAt + 1
-            }
+            val splitAt = breakAt + 1
             val chunk = remaining.substring(0, splitAt).trim()
             if (chunk.isNotBlank()) chunks.add(chunk)
             remaining = remaining.substring(splitAt).trim()
@@ -324,10 +320,10 @@ class PdfReaderActivity : AppCompatActivity() {
         if (chunks.isEmpty()) return
 
         val session = ++speechSession
-        val finalId = "pdf-session-\${session}-chunk-\${chunks.lastIndex}"
+        val finalId = "pdf-session-${session}-chunk-${chunks.lastIndex}"
         lastSpeechUtteranceId = finalId
         chunks.forEachIndexed { index, chunk ->
-            val utteranceId = "pdf-session-\${session}-chunk-\${index}"
+            val utteranceId = "pdf-session-${session}-chunk-${index}"
             val result = engine.speak(
                 chunk,
                 if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
