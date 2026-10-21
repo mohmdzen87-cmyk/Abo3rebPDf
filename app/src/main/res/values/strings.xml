@@ -48,7 +48,7 @@
     <string name="keep_screen_on_description">منع إطفاء الشاشة أثناء القراءة.</string>
     <string name="settings_progress_note">يحفظ التطبيق موضع القراءة الأخير لكل ملف على جهازك.</string>
     <string name="speech_settings_title">تحسين القراءة الصوتية</string>
-    <string name="speech_settings_description">اختر لغة النطق وسرعة وصوتاً مريحاً للاستماع الطويل. تعتمد جودة الصوت على المحرك والأصوات المثبّتة على جهازك.</string>
+    <string name="speech_settings_description">اختر لغة النطق والسرعة ودرجة الصوت. يفضّل التطبيق أعلى جودة صوت متاحة، ويختار الصوت الشبكي عند تساوي الجودة. تعتمد النتيجة على محرك الصوت والأصوات المتاحة على جهازك.</string>
     <string name="speech_language">لغة النطق</string>
     <string name="speech_language_description">تلقائي يختار العربية أو الإنجليزية بحسب النص، ويمكنك تحديد اللغة يدوياً.</string>
     <string name="speech_language_auto">تلقائي (حسب النص)</string>
