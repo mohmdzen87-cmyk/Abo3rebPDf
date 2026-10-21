@@ -18,6 +18,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -49,6 +50,8 @@ class PdfReaderActivity : AppCompatActivity() {
     private var pageTurnInProgress = false
     private var textToSpeech: TextToSpeech? = null
     @Volatile private var speechReady = false
+    @Volatile private var lastSpeechUtteranceId: String? = null
+    private var speechSession = 0
     private val speechExecutor = Executors.newSingleThreadExecutor()
 
     private val preferences by lazy {
@@ -94,6 +97,26 @@ class PdfReaderActivity : AppCompatActivity() {
                 // A slightly slower pace improves clarity for long-form Arabic reading.
                 engine.setSpeechRate(0.92f)
                 engine.setPitch(1.0f)
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+
+                    override fun onDone(utteranceId: String?) {
+                        finishSpeechIfLast(utteranceId)
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        finishSpeechIfLast(utteranceId)
+                    }
+
+                    override fun onError(utteranceId: String?, errorCode: Int) {
+                        finishSpeechIfLast(utteranceId)
+                    }
+
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                        finishSpeechIfLast(utteranceId)
+                    }
+                })
 
                 speechReady = languageStatus != TextToSpeech.LANG_MISSING_DATA &&
                     languageStatus != TextToSpeech.LANG_NOT_SUPPORTED
@@ -219,6 +242,8 @@ class PdfReaderActivity : AppCompatActivity() {
     private fun toggleReadAloud() {
         val engine = textToSpeech
         if (engine?.isSpeaking == true) {
+            lastSpeechUtteranceId = null
+            speechSession++
             engine.stop()
             findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
             return
@@ -265,28 +290,72 @@ class PdfReaderActivity : AppCompatActivity() {
     private fun speakTextInChunks(text: String) {
         val engine = textToSpeech ?: return
         val maxLength = TextToSpeech.getMaxSpeechInputLength()
+        val normalizedText = text
+            .replace("\\r\\n", "\\n")
+            .replace('\\r', '\\n')
+            // PDF extraction often inserts a newline at every visual line.
+            // Keep blank lines as paragraph boundaries but join wrapped lines.
+            .replace(Regex("(?<!\\n)\\n(?!\\n)"), " ")
+            .replace(Regex("[ \\t]+"), " ")
+            .replace(Regex(" *\\n *"), "\\n")
+            .replace(Regex("\\n{3,}"), "\\n\\n")
+            .trim()
         val chunks = mutableListOf<String>()
-        var remaining = text
+        var remaining = normalizedText
         while (remaining.length > maxLength) {
-            var splitAt = remaining.lastIndexOf(' ', maxLength)
-            if (splitAt < maxLength / 2) splitAt = maxLength
-            chunks.add(remaining.substring(0, splitAt).trim())
+            val limit = maxLength.coerceAtMost(remaining.length - 1)
+            val lowerBound = limit / 2
+            val breakAt = sequenceOf(
+                remaining.lastIndexOf("\\n\\n", limit),
+                remaining.lastIndexOf('\\n', limit),
+                remaining.lastIndexOfAny(charArrayOf('؟', '!', '.', '؛', ':', '。'), limit),
+                remaining.lastIndexOf(' ', limit)
+            ).firstOrNull { it >= lowerBound } ?: limit
+            val splitAt = if (breakAt < limit && remaining[breakAt].isWhitespace()) {
+                breakAt + 1
+            } else {
+                breakAt + 1
+            }
+            val chunk = remaining.substring(0, splitAt).trim()
+            if (chunk.isNotBlank()) chunks.add(chunk)
             remaining = remaining.substring(splitAt).trim()
         }
         if (remaining.isNotBlank()) chunks.add(remaining)
+        if (chunks.isEmpty()) return
+
+        val session = ++speechSession
+        val finalId = "pdf-session-\${session}-chunk-\${chunks.lastIndex}"
+        lastSpeechUtteranceId = finalId
         chunks.forEachIndexed { index, chunk ->
-            engine.speak(
+            val utteranceId = "pdf-session-\${session}-chunk-\${index}"
+            val result = engine.speak(
                 chunk,
                 if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
                 null,
-                "pdf-page-$currentPage-chunk-$index"
+                utteranceId
             )
+            if (result == TextToSpeech.ERROR) {
+                finishSpeechIfLast(finalId)
+            }
+        }
+    }
+
+    private fun finishSpeechIfLast(utteranceId: String?) {
+        if (utteranceId == null || utteranceId != lastSpeechUtteranceId) return
+        lastSpeechUtteranceId = null
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                findViewById<MaterialButton>(R.id.btnReadAloud)
+                    .setText(R.string.read_aloud)
+            }
         }
     }
 
     private fun showRelativePage(offset: Int) {
         if (pageTurnInProgress) return
         if (textToSpeech?.isSpeaking == true) {
+            lastSpeechUtteranceId = null
+            speechSession++
             textToSpeech?.stop()
             findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
         }
@@ -570,6 +639,8 @@ class PdfReaderActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         pageImage.animate().cancel()
+        lastSpeechUtteranceId = null
+        speechSession++
         textToSpeech?.stop()
         textToSpeech?.shutdown()
         textToSpeech = null
