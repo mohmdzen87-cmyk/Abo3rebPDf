@@ -68,11 +68,12 @@ class PdfReaderActivity : AppCompatActivity() {
             override fun onDown(event: MotionEvent): Boolean = true
 
             override fun onFling(
-                first: MotionEvent,
-                second: MotionEvent,
+                first: MotionEvent?,
+                second: MotionEvent?,
                 velocityX: Float,
                 velocityY: Float
             ): Boolean {
+                if (first == null || second == null) return false
                 if (!preferences.getBoolean(AppSettings.KEY_SWIPE_NAVIGATION, true)) return false
                 val deltaX = second.x - first.x
                 val deltaY = second.y - first.y
