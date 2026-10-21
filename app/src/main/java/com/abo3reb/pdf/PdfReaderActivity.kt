@@ -53,6 +53,18 @@ class PdfReaderActivity : AppCompatActivity() {
     @Volatile private var lastSpeechUtteranceId: String? = null
     private var speechSession = 0
     private val speechExecutor = Executors.newSingleThreadExecutor()
+    private val cloudSpeechPlayer by lazy {
+        CloudSpeechPlayer(this) { active, error ->
+            if (!isFinishing && !isDestroyed) {
+                findViewById<MaterialButton>(R.id.btnReadAloud)
+                    .setText(if (active) R.string.stop_read_aloud else R.string.read_aloud)
+                if (error != null) {
+                    Toast.makeText(this, R.string.speech_error, Toast.LENGTH_LONG).show()
+                    ErrorLog.record(this, "Cloud Arabic speech playback", IllegalStateException(error))
+                }
+            }
+        }
+    }
 
     private val preferences by lazy {
         getSharedPreferences(AppSettings.PREFS_NAME, MODE_PRIVATE)
@@ -240,6 +252,11 @@ class PdfReaderActivity : AppCompatActivity() {
     }
 
     private fun toggleReadAloud() {
+        if (cloudSpeechPlayer.isActive) {
+            cloudSpeechPlayer.stop()
+            findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
+            return
+        }
         val engine = textToSpeech
         if (engine?.isSpeaking == true) {
             lastSpeechUtteranceId = null
@@ -248,7 +265,8 @@ class PdfReaderActivity : AppCompatActivity() {
             findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
             return
         }
-        if (!speechReady) {
+        val cloudUrl = preferences.getString(AppSettings.KEY_CLOUD_TTS_URL, "").orEmpty().trim()
+        if (cloudUrl.isEmpty() && !speechReady) {
             Toast.makeText(this, R.string.speech_unavailable, Toast.LENGTH_LONG).show()
             return
         }
@@ -272,9 +290,20 @@ class PdfReaderActivity : AppCompatActivity() {
                     button.isEnabled = true
                     if (text.isBlank()) {
                         Toast.makeText(this, R.string.speech_no_text, Toast.LENGTH_LONG).show()
-                    } else if (textToSpeech != null && speechReady) {
-                        button.setText(R.string.stop_read_aloud)
-                        speakTextInChunks(text)
+                    } else {
+                        val configuredCloudUrl = preferences
+                            .getString(AppSettings.KEY_CLOUD_TTS_URL, "").orEmpty().trim()
+                        if (configuredCloudUrl.isNotEmpty()) {
+                            val voice = preferences.getString(AppSettings.KEY_CLOUD_TTS_VOICE, "male")
+                                .orEmpty()
+                            button.setText(R.string.stop_read_aloud)
+                            cloudSpeechPlayer.start(text, configuredCloudUrl, voice)
+                        } else if (textToSpeech != null && speechReady) {
+                            button.setText(R.string.stop_read_aloud)
+                            speakTextInChunks(text)
+                        } else {
+                            Toast.makeText(this, R.string.speech_unavailable, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             } catch (error: Exception) {
@@ -349,6 +378,10 @@ class PdfReaderActivity : AppCompatActivity() {
 
     private fun showRelativePage(offset: Int) {
         if (pageTurnInProgress) return
+        if (cloudSpeechPlayer.isActive) {
+            cloudSpeechPlayer.stop()
+            findViewById<MaterialButton>(R.id.btnReadAloud).setText(R.string.read_aloud)
+        }
         if (textToSpeech?.isSpeaking == true) {
             lastSpeechUtteranceId = null
             speechSession++
@@ -637,6 +670,7 @@ class PdfReaderActivity : AppCompatActivity() {
         pageImage.animate().cancel()
         lastSpeechUtteranceId = null
         speechSession++
+        if (this::pdfUri.isInitialized) cloudSpeechPlayer.stop(notify = false)
         textToSpeech?.stop()
         textToSpeech?.shutdown()
         textToSpeech = null
